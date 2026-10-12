@@ -1,78 +1,142 @@
-"""Geometría solar y radiación en día despejado.
+"""Radiación solar sobre los cerramientos el día de diseño, con pvlib.
 
-Modelo de cielo despejado de ASHRAE (Handbook — Fundamentals 1985-2005):
-    I_DN = A · exp(-B / sen β)
-    I_d  = C · I_DN · (1 + cos Σ)/2
-    I_r  = ρg · I_DN · (C + sen β) · (1 - cos Σ)/2
+- Posición solar: algoritmo SPA del NREL (pvlib.solarposition).
+- Radiación en cielo despejado, dos modelos:
+    * "ashrae":   modelo clásico de ASHRAE (constantes A, B, C del día 21 de cada mes),
+                  el mismo que EnergyPlus llama ASHRAEClearSky.
+    * "ineichen": modelo de Ineichen-Perez con la turbidez de Linke de la localidad
+                  (base de datos SoDa incluida en pvlib). Más realista para España.
+- Transposición a la superficie: modelo anisótropo de Perez (circunsolar y brillo
+  del horizonte) + reflexión del suelo (pvlib.irradiance.get_total_irradiance).
+  Es el mismo modelo que usa EnergyPlus; el isotrópico subestima hasta un 12 % la
+  radiación en fachadas E/O con el sol bajo.
+- Vidrios: modificador por ángulo de incidencia (IAM) con el modelo físico de
+  Fresnel + absorción de pvlib (pvlib.iam.physical), aplicado a cada hoja.
 
-Convenios:
-    - Horas en HORA SOLAR verdadera (12 = mediodía solar), evaluadas en el instante.
-    - Orientación de la superficie (azimut) en grados desde el NORTE en sentido
-      horario: N=0, E=90, S=180, O=270.
-    - Inclinación Σ: 90 = vertical, 0 = horizontal (cubierta).
+Convenios: azimut de la superficie desde el NORTE en sentido horario
+(N=0, E=90, S=180, O=270); inclinación 90 = vertical, 0 = horizontal.
+Las horas se expresan en HORA OFICIAL.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+from functools import lru_cache
+
+import numpy as np
+import pandas as pd
+import pvlib
 
 # Constantes ASHRAE para el día 21 de cada mes (A [W/m²], B [-], C [-])
 CONSTANTES_ASHRAE = {
-    1: (1230, 0.142, 0.058),
-    2: (1215, 0.144, 0.060),
-    3: (1186, 0.156, 0.071),
-    4: (1136, 0.180, 0.097),
-    5: (1104, 0.196, 0.121),
-    6: (1088, 0.205, 0.134),
-    7: (1085, 0.207, 0.136),
-    8: (1107, 0.201, 0.122),
-    9: (1151, 0.177, 0.092),
-    10: (1192, 0.160, 0.073),
-    11: (1221, 0.149, 0.063),
-    12: (1233, 0.142, 0.057),
+    1: (1230, 0.142, 0.058), 2: (1215, 0.144, 0.060), 3: (1186, 0.156, 0.071),
+    4: (1136, 0.180, 0.097), 5: (1104, 0.196, 0.121), 6: (1088, 0.205, 0.134),
+    7: (1085, 0.207, 0.136), 8: (1107, 0.201, 0.122), 9: (1151, 0.177, 0.092),
+    10: (1192, 0.160, 0.073), 11: (1221, 0.149, 0.063), 12: (1233, 0.142, 0.057),
 }
 
-DIA_DEL_ANO_21 = {1: 21, 2: 52, 3: 80, 4: 111, 5: 141, 6: 172,
-                  7: 202, 8: 233, 9: 264, 10: 294, 11: 325, 12: 355}
+PASO_MIN = 5  # resolución interna [min]
+
+# Vidrio sodocálcico: índice de refracción, coef. extinción [1/m], espesor [m]
+N_VIDRIO, K_VIDRIO, L_VIDRIO = 1.526, 4.0, 0.004
+
+
+def _zona(diferencia_horaria: float) -> str:
+    """Zona horaria fija de pandas para un desfase entero respecto a UTC."""
+    d = int(round(diferencia_horaria))
+    return f"Etc/GMT{-d:+d}"  # ojo: el signo de Etc/GMT va invertido
+
+
+@lru_cache(maxsize=64)
+def _cielo(latitud: float, longitud: float, altitud: float, mes: int,
+           diferencia_horaria: float, modelo: str, claridad: float):
+    """Posición solar y componentes en horizontal cada PASO_MIN minutos."""
+    tz = _zona(diferencia_horaria)
+    tiempos = pd.date_range(f"2021-{mes:02d}-21 00:00", periods=24 * 60 // PASO_MIN,
+                            freq=f"{PASO_MIN}min", tz=tz)
+    pos = pvlib.solarposition.get_solarposition(tiempos, latitud, longitud, altitude=altitud)
+    if modelo == "ashrae":
+        A, B, C = CONSTANTES_ASHRAE[mes]
+        sen_b = np.sin(np.radians(pos["apparent_elevation"].to_numpy()))
+        dni = np.where(sen_b > 0, claridad * A * np.exp(-B / np.clip(sen_b, 1e-6, None)), 0.0)
+        dhi = C * dni
+        ghi = dni * np.clip(sen_b, 0, None) + dhi
+    elif modelo == "ineichen":
+        loc = pvlib.location.Location(latitud, longitud, tz=tz, altitude=altitud)
+        cs = loc.get_clearsky(tiempos, model="ineichen", solar_position=pos)
+        dni, dhi, ghi = (cs[k].to_numpy() * claridad for k in ("dni", "dhi", "ghi"))
+    else:
+        raise ValueError(f"Modelo de cielo desconocido: {modelo}")
+    horas = np.arange(len(tiempos)) * PASO_MIN / 60.0
+    return horas, pos, dni, dhi, ghi
 
 
 @dataclass
-class PosicionSolar:
-    altura: float   # β [rad]
-    azimut: float   # desde el norte, horario [rad]
+class PerfilSolar:
+    """Componentes de la irradiancia sobre una superficie a lo largo del día."""
+    horas: np.ndarray        # hora oficial 0-24
+    directa: np.ndarray      # W/m²
+    difusa: np.ndarray       # cielo + suelo, W/m²
+    aoi: np.ndarray          # ángulo de incidencia de la directa [°]
+
+    @property
+    def total(self) -> np.ndarray:
+        return self.directa + self.difusa
+
+    def transmitida_vidrio(self, hojas: int = 2) -> np.ndarray:
+        """Irradiancia efectiva para un vidrio: directa·IAM(θ) + difusa·IAM_dif."""
+        iam_d = iam_vidrio(self.aoi, hojas)
+        return self.directa * iam_d + self.difusa * iam_difusa(hojas)
 
 
-def declinacion(dia: int) -> float:
-    """Declinación solar [rad] (Cooper)."""
-    return math.radians(23.45) * math.sin(math.radians(360.0 * (284 + dia) / 365.0))
+def iam_vidrio(aoi, hojas: int = 2):
+    """Modificador por ángulo de incidencia de un acristalamiento de 'hojas' vidrios."""
+    una = pvlib.iam.physical(np.asarray(aoi, float), n=N_VIDRIO, K=K_VIDRIO, L=L_VIDRIO)
+    return np.clip(np.nan_to_num(una, nan=0.0), 0.0, 1.0) ** hojas
 
 
-def posicion_solar(latitud_deg: float, dia: int, hora_solar: float) -> PosicionSolar:
-    lat = math.radians(latitud_deg)
-    dec = declinacion(dia)
-    h = math.radians(15.0 * (hora_solar - 12.0))
-    sen_b = math.cos(lat) * math.cos(dec) * math.cos(h) + math.sin(lat) * math.sin(dec)
-    beta = math.asin(max(-1.0, min(1.0, sen_b)))
-    az = math.atan2(-math.cos(dec) * math.sin(h),
-                    math.sin(dec) * math.cos(lat) - math.cos(dec) * math.sin(lat) * math.cos(h))
-    return PosicionSolar(beta, az % (2 * math.pi))
+@lru_cache(maxsize=8)
+def iam_difusa(hojas: int = 2) -> float:
+    """IAM medio hemisférico para radiación difusa isotrópica (integral de Brandemuehl)."""
+    th = np.linspace(0.0, 89.9, 900)
+    pesos = np.sin(np.radians(th)) * np.cos(np.radians(th))
+    return float(np.trapezoid(iam_vidrio(th, hojas) * pesos, th) / np.trapezoid(pesos, th))
 
 
-def irradiancia(latitud_deg: float, mes: int, hora_solar: float,
-                azimut_sup_deg: float, inclinacion_deg: float = 90.0,
-                claridad: float = 1.0, albedo: float = 0.2) -> float:
-    """Irradiancia total sobre una superficie [W/m²] en día despejado."""
-    A, B, C = CONSTANTES_ASHRAE[mes]
-    sol = posicion_solar(latitud_deg, DIA_DEL_ANO_21[mes], hora_solar)
-    if sol.altura <= 0.0:
-        return 0.0
-    sen_b = math.sin(sol.altura)
-    i_dn = claridad * A * math.exp(-B / sen_b)
-    sigma = math.radians(inclinacion_deg)
-    gamma = sol.azimut - math.radians(azimut_sup_deg)
-    cos_theta = (math.cos(sol.altura) * math.cos(gamma) * math.sin(sigma)
-                 + sen_b * math.cos(sigma))
-    directa = i_dn * max(cos_theta, 0.0)
-    difusa = C * i_dn * (1.0 + math.cos(sigma)) / 2.0
-    reflejada = albedo * i_dn * (C + sen_b) * (1.0 - math.cos(sigma)) / 2.0
-    return directa + difusa + reflejada
+def perfil(latitud: float, longitud: float, altitud: float, mes: int,
+           diferencia_horaria: float, azimut: float, inclinacion: float = 90.0,
+           modelo: str = "ashrae", claridad: float = 1.0, albedo: float = 0.2) -> PerfilSolar:
+    horas, pos, dni, dhi, ghi = _cielo(latitud, longitud, altitud, mes,
+                                       diferencia_horaria, modelo, claridad)
+    extra = pvlib.irradiance.get_extra_radiation(pos.index)
+    masa_aire = pvlib.atmosphere.get_relative_airmass(pos["apparent_zenith"])
+    poa = pvlib.irradiance.get_total_irradiance(
+        surface_tilt=inclinacion, surface_azimuth=azimut,
+        solar_zenith=pos["apparent_zenith"], solar_azimuth=pos["azimuth"],
+        dni=dni, ghi=ghi, dhi=dhi, albedo=albedo, model="perez",
+        dni_extra=extra, airmass=masa_aire)
+    aoi = pvlib.irradiance.aoi(inclinacion, azimut, pos["apparent_zenith"], pos["azimuth"])
+    directa = np.clip(np.nan_to_num(poa["poa_direct"].to_numpy()), 0.0, None)
+    difusa = np.clip(np.nan_to_num(poa["poa_diffuse"].to_numpy()), 0.0, None)
+    return PerfilSolar(horas, directa, difusa, np.clip(aoi.to_numpy(), 0, 90))
+
+
+def perfil_irradiancia(latitud: float, longitud: float, altitud: float, mes: int,
+                       diferencia_horaria: float, azimut: float, inclinacion: float = 90.0,
+                       modelo: str = "ashrae", claridad: float = 1.0,
+                       albedo: float = 0.2) -> tuple[np.ndarray, np.ndarray]:
+    """Devuelve (horas oficiales 0-24, irradiancia total sobre la superficie [W/m²])."""
+    p = perfil(latitud, longitud, altitud, mes, diferencia_horaria, azimut, inclinacion,
+               modelo, claridad, albedo)
+    return p.horas, p.total
+
+
+def interpolar(horas: np.ndarray, valores: np.ndarray, h: float) -> float:
+    """Valor en la hora h (periódica de 24 h)."""
+    return float(np.interp(h % 24.0, horas, valores, period=24.0))
+
+
+def altura_solar_max(latitud: float, longitud: float, mes: int,
+                     diferencia_horaria: float) -> float:
+    """Altura solar máxima del día [°] (útil para comprobaciones)."""
+    _, pos, *_ = _cielo(latitud, longitud, 0.0, mes, diferencia_horaria, "ashrae", 1.0)
+    return float(pos["apparent_elevation"].max())

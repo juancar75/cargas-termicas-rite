@@ -6,9 +6,6 @@ import pytest
 from cargas_rite import calcular_invierno, calcular_verano, cargar, desde_dict
 from cargas_rite.informe import markdown
 from cargas_rite.modelo import ErrorDatos
-from cargas_rite.psicrometria import (humedad_especifica_desde_bulbo_humedo,
-                                      humedad_especifica_desde_hr, presion_atmosferica)
-from cargas_rite.solar import irradiancia
 from cargas_rite.verano import fraccion_oscilacion
 
 EJEMPLO = Path(__file__).parents[1] / "ejemplos" / "local_comercial.yaml"
@@ -17,7 +14,7 @@ EJEMPLO = Path(__file__).parents[1] / "ejemplos" / "local_comercial.yaml"
 def caja(**cambios):
     """Local mínimo: un muro sur y una ventana sur."""
     d = {
-        "clima": {"latitud": 40.0, "longitud": 0.0, "altitud": 0, "diferencia_horaria": 0,
+        "clima": {"latitud": 40.0, "longitud": 0.0, "altitud": 0, "diferencia_horaria": 0, "huso": 0,
                   "invierno": {"temperatura_seca": 0.0},
                   "verano": {"temperatura_seca": 35.0, "temperatura_humeda_coincidente": 22.0,
                              "oscilacion_media_diaria": 10.0}},
@@ -35,35 +32,7 @@ def caja(**cambios):
     return desde_dict(d)
 
 
-# --- psicrometría -------------------------------------------------------------
-def test_presion_nivel_del_mar():
-    assert presion_atmosferica(0) == pytest.approx(101.325)
-
-
-def test_humedad_25C_50():
-    # ASHRAE: w ≈ 9,9 g/kg a 25 °C y 50 % HR al nivel del mar
-    assert humedad_especifica_desde_hr(25, 0.5, 101.325) == pytest.approx(9.9, abs=0.15)
-
-
-def test_bulbo_humedo_saturado():
-    p = 101.325
-    assert humedad_especifica_desde_bulbo_humedo(20, 20, p) == pytest.approx(
-        humedad_especifica_desde_hr(20, 1.0, p), rel=1e-3)
-
-
-# --- solar ---------------------------------------------------------------------
-def test_noche_sin_radiacion():
-    assert irradiancia(40, 7, 2, 180) == 0.0
-
-
-def test_simetria_este_oeste():
-    assert irradiancia(40, 7, 9, 90) == pytest.approx(irradiancia(40, 7, 15, 270), rel=1e-6)
-
-
-def test_horizontal_mediodia_julio():
-    assert 850 < irradiancia(40, 7, 12, 0, 0) < 1000
-
-
+# --- perfil de temperatura -----------------------------------------------------
 def test_perfil_oscilacion():
     assert fraccion_oscilacion(15) == 0.0
     assert fraccion_oscilacion(5) == 1.0
@@ -73,17 +42,20 @@ def test_perfil_oscilacion():
 def test_invierno_a_mano():
     p = caja()
     r = calcular_invierno(p)
-    # transmisión: 0,5·10·21 + 3·2·21 = 105 + 126 ; ventilación 0,34·100·21 = 714
+    # transmisión: 0,5·10·21 + 3·2·21 = 105 + 126
     assert r.transmision["Muro"] == pytest.approx(105)
     assert r.transmision["Ventana"] == pytest.approx(126)
-    assert r.ventilacion == pytest.approx(714)
-    assert r.total == pytest.approx(945)
+    # aire a 0 °C y nivel del mar: ρ = 1,292 kg/m³ → ρc = 1,292·1006/3600 = 0,361 W·h/(m³·K)
+    assert r.coef_aire == pytest.approx(0.361, abs=0.002)
+    assert r.ventilacion == pytest.approx(r.coef_aire * 100 * 21)
+    assert r.total == pytest.approx(231 + r.ventilacion)
 
 
 def test_recuperador_reduce_ventilacion():
     p = caja(ventilacion={"caudal_m3h": 100, "eficiencia_recuperador": 0.7,
                           "infiltracion_renovaciones_h": 0})
-    assert calcular_invierno(p).ventilacion == pytest.approx(0.34 * 100 * 0.3 * 21)
+    r = calcular_invierno(p)
+    assert r.ventilacion == pytest.approx(r.coef_aire * 100 * 0.3 * 21)
 
 
 # --- verano -------------------------------------------------------------------

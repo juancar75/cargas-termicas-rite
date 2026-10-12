@@ -3,89 +3,131 @@
 Notación: θ temperatura [°C], U transmitancia [W/(m²·K)], A área [m²],
 V̇ caudal [m³/h], w humedad específica [g/kg aire seco].
 
+Librerías de base (todas libres y ampliamente validadas):
+
+| Tarea | Librería | Referencia |
+|---|---|---|
+| Psicrometría | [CoolProp](http://www.coolprop.org) (HumidAirProp) | ASHRAE RP-1485 |
+| Posición solar | [pvlib](https://pvlib-python.readthedocs.io) | Algoritmo SPA del NREL |
+| Radiación sobre superficies | pvlib | Cielo despejado ASHRAE o Ineichen; transposición de Perez |
+| Ángulo de incidencia en vidrios | pvlib (`iam.physical`) | Fresnel + absorción |
+| Referencia de validación | [EnergyPlus](https://energyplus.net) 26.1 | ANSI/ASHRAE 140 (BESTEST) |
+
 ## 1. Condiciones de proyecto
 
 **Exteriores.** Las introduce el usuario. Fuente recomendada: Guía técnica IDAE
-*Condiciones climáticas exteriores de proyecto* (temperatura seca de invierno según
-percentil, temperatura seca y húmeda coincidente de verano, oscilación media diaria).
+*Condiciones climáticas exteriores de proyecto*.
 
 **Interiores.** RITE IT 1.1.4.1.2: verano 23–25 °C y 45–60 % HR; invierno 21–23 °C y
 40–50 % HR. Se avisa si la temperatura queda fuera de rango.
 
-**Aire exterior.** RITE IT 1.1.4.2.3, caudal por persona según categoría:
-IDA1 20 dm³/s, IDA2 12,5 dm³/s, IDA3 8 dm³/s, IDA4 5 dm³/s. Se puede imponer un
-caudal propio. Si el caudal supera 0,5 m³/s sin recuperador, se avisa
-(IT 1.2.4.5.2).
+**Aire exterior.** RITE IT 1.1.4.2.3: IDA1 20 dm³/s, IDA2 12,5, IDA3 8, IDA4 5 dm³/s por
+persona. Si el caudal supera 0,5 m³/s sin recuperador, se avisa (IT 1.2.4.5.2).
 
-## 2. Calefacción
+**Propiedades del aire.** Los coeficientes de transporte ρ·c y ρ·h_fg se calculan con
+CoolProp a la presión de la altitud del lugar y a la temperatura exterior de diseño.
+A nivel del mar y 20 °C dan los clásicos 0,34 y 0,83; en Madrid (667 m) en verano
+el aire es un ~13 % menos denso.
 
-Régimen estacionario, sin descontar ganancias internas ni solares:
+## 2. Cerramientos
+
+**Transmitancia U** — UNE-EN ISO 6946, con las resistencias superficiales de su
+tabla 7 (las mismas del DA DB-HE/1 del CTE): Rsi = 0,13 / 0,10 / 0,17 m²K/W para flujo
+horizontal / ascendente / descendente; Rse = 0,04 m²K/W; hacia otro local Rse = Rsi.
+
+**Propiedades dinámicas** — UNE-EN ISO 13786, método de la matriz de transferencia
+(periodo 24 h). Da el factor de amortiguamiento f = |Y12|/U y el desfase φ. Validado
+contra una simulación por diferencias finitas independiente (error < 0,5 % en f y
+< 0,15 h en φ).
+
+Cada cerramiento se puede dar por su U (y la inercia ligera/media/pesada) o por
+capas (espesor, λ, ρ, c), de interior a exterior.
+
+## 3. Calefacción
+
+Régimen estacionario (planteamiento UNE-EN 12831-1, simplificado), sin descontar
+ganancias internas ni solares:
 
 ```
 Φ_T,ext = Σ (U + ΔU_pt) · A · (θi − θe)        opacos exteriores
         + Σ U · A · (θi − θe)                  huecos
 Φ_T,ady = Σ U · A · (θi − θady)                particiones, suelos (se ignora si < 0)
-Φ_V     = 0,34 · V̇ · (1 − η_rec) · (θi − θe)
-Φ_inf   = 0,34 · n · Vol · (θi − θe)
+Φ_V     = ρc · V̇ · (1 − η_rec) · (θi − θe)
+Φ_inf   = ρc · n · Vol · (θi − θe)
 Φ_total = (Φ_T + Φ_V + Φ_inf) · (1 + mayoración)
 ```
 
-ΔU_pt es un incremento global por puentes térmicos (por defecto 0,10 W/(m²·K)).
+## 4. Refrigeración
 
-## 3. Refrigeración
+Se calcula el día 21 del mes de cálculo, hora a hora (hora oficial).
 
-Se calculan las 24 horas oficiales del día 21 del mes de cálculo y se toma la de
-mayor carga total.
+**Temperatura exterior.** `θe(h) = θs − OMD · X(h_est)`, perfil X de ASHRAE referido a
+la hora estándar local (hora oficial − 1 en verano peninsular).
 
-**Hora solar.** `hs = hora_oficial − diferencia_horaria + longitud/15` (se desprecia
-la ecuación del tiempo).
+**Radiación solar.** Posición solar SPA; cielo despejado ASHRAE (constantes A, B, C,
+como `ASHRAEClearSky` de EnergyPlus) o Ineichen con turbidez de Linke; transposición
+anisótropa de Perez. En vidrios, la directa se multiplica por el modificador de
+incidencia de Fresnel de cada hoja y la difusa por su media hemisférica (0,90 para
+doble vidrio, coherente con el F_w = 0,90 del DA DB-HE/1).
 
-**Temperatura exterior.** `θe(h) = θs − OMD · X(hs)`, con el perfil horario X de
-ASHRAE (0 a las 15 h solares, 1 a las 5 h).
+### 4.1 Método dinámico (por defecto)
 
-**Radiación solar.** Modelo de cielo despejado de ASHRAE con las constantes A, B, C
-del día 21 de cada mes; directa + difusa + reflejada por el suelo (albedo 0,2).
+Balance térmico horario del local con una red de nodos (planteamiento de
+UNE-EN ISO 52016-1 y EnergyPlus):
 
-**Opacos exteriores.** Temperatura sol-aire:
+- cada elemento opaco se discretiza por capas en nodos con capacidad térmica
+  (diferencias finitas implícitas, paso de 10 min, 12 días hasta régimen periódico);
+- cara interior: convección con el aire (h_ci = 2,5 W/m²K) y radiación de onda larga
+  con el resto de superficies a través de un nodo radiante (h_ri = 5,13 W/m²K);
+- cara exterior: h_ce = 4 + 4·v (UNE-EN ISO 6946, anexo C; v = 2 m/s en verano por
+  defecto), h_re = 4,14 W/m²K, radiación solar absorbida α·I y pérdida hacia el cielo
+  F_sky·h_re·11 K;
+- la radiación solar transmitida incide (directa) sobre el suelo y (difusa) se
+  reparte por área; la parte radiante de las ganancias internas se reparte por área;
+- el aire se mantiene a la consigna y la carga sensible es el calor que hay que
+  extraerle.
+
+El sistema es lineal: la carga se descompone exactamente por componentes
+(superposición), lo que permite el desglose del informe.
+
+Las superficies interiores sin pérdidas (tabiques, forjados entre locales
+climatizados) se describen en `masas_interiores`. Si no se indican, se supone un
+forjado de hormigón como suelo y techo, y se avisa.
+
+### 4.2 Método simplificado (opcional, conservador)
+
+Opacos: temperatura sol-aire y admitancias (ISO 13786):
 
 ```
-θsa = θe + α · I / 17 − Δ            (Δ = 3,9 K en horizontal, 0 en vertical)
+θsa = θe + α · I / 17 − Δ            (Δ = 3,9 K en horizontal)
 Q   = U · A · [ (θsa,m − θi) + f · (θsa(h − φ) − θsa,m) ]
 ```
 
-donde θsa,m es la media diaria, f el factor de amortiguamiento y φ el desfase (h).
-Valores por defecto según inercia: ligera f=0,8 φ=3 h; media f=0,4 φ=7 h;
-pesada f=0,2 φ=10 h. Se pueden indicar valores propios por cerramiento.
+Huecos: conducción + radiación **instantánea**, sin almacenamiento. Sobredimensiona
+la carga solar entre un 70 y un 150 % (ver validación); sirve como cota superior.
 
-**Huecos.**
+### 4.3 Carga latente
 
-```
-Q_cond  = U · A · (θe − θi)
-Q_solar = A · (1 − FM) · g · Fs · I(h)
-```
+Ocupantes en horario, ventilación en horario e infiltración 24 h:
+`Q_l = ρ·h_fg · V̇ · (we − wi)`. Es instantánea en ambos métodos.
 
-La ganancia solar se considera instantánea (sin factor de almacenamiento), lo que
-queda del lado de la seguridad.
+## 5. Validación
 
-**Particiones.** `Q = U · A · (θady − θi)`, sólo si es positiva.
+Ver [`validacion/resultados.md`](../validacion/resultados.md). Resumen frente a
+EnergyPlus 26.1 en 9 casos de referencia:
 
-**Cargas internas** (en horario de ocupación): ocupantes (sensible y latente por
-persona según actividad, tabla en `cargas_rite/datos/actividades.yaml`), iluminación
-y equipos (W/m²).
+- Refrigeración, método dinámico: entre −10 % y +35 % por caso aislado y +11 % en el
+  local completo.
+- Refrigeración, método simplificado: siempre por encima (+15 % a +147 %).
+- Calefacción: entre −8 % y +24 %.
 
-**Aire exterior.**
-
-```
-Q_s = 0,34 · V̇ · (1 − η_rec) · (θe − θi)      ventilación en horario; infiltración 24 h
-Q_l = 0,83 · V̇ · (we − wi)
-```
-
-## 4. Limitaciones conocidas (v0.1)
+## 6. Limitaciones conocidas
 
 - Un solo local; sin simultaneidad entre zonas.
 - Sin sombras de voladizos ni obstáculos (sólo factor de sombra global Fs).
-- Sin factores de almacenamiento para radiación ni iluminación.
-- Huecos interiores y puertas se introducen como cerramientos más.
-- Condiciones climáticas introducidas a mano (base IDAE prevista para v0.2).
-
-Propuestas de mejora: abrir una *issue*.
+- Muros muy pesados aislados: el método dinámico da hasta un −10 % frente a
+  EnergyPlus (diferencias en los coeficientes superficiales exteriores).
+- Cubiertas en invierno: no se considera la radiación nocturna al cielo
+  (−8 % frente a EnergyPlus), igual que UNE-EN 12831-1.
+- Pendiente de revisar contra el texto de las normas UNE (ver
+  [`normativa.md`](normativa.md)).

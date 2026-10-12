@@ -90,11 +90,15 @@ def markdown(p: Proyecto, inv: ResultadoInvierno, ver: ResultadoVerano) -> str:
         else:
             ori = f"adyacente {c.temperatura_adyacente_invierno:g}/{c.temperatura_adyacente_verano:g} °C"
         if c.tipo == "ventana":
-            otros = f"g={c.g:g}, marco {c.fraccion_marco:.0%}, Fs={c.factor_sombra:g}"
+            otros = (f"g={_n(c.g, 2)}, marco {c.fraccion_marco * 100:.0f} %, "
+                     f"Fs={_n(c.factor_sombra, 2)}, {c.hojas} hojas")
         elif c.exterior:
-            otros = f"α={c.absortividad:g}, f={c.factor_amortiguamiento:g}, φ={c.desfase_h:g} h"
+            otros = (f"α={_n(c.absortividad, 2)}, f={_n(c.factor_amortiguamiento, 2)}, "
+                     f"φ={_n(c.desfase_h, 1)} h")
         else:
             otros = ""
+        if c.capas:
+            otros = (otros + "; " if otros else "") + f"{len(c.capas)} capas (ISO 6946/13786)"
         a(f"| {c.nombre} | {c.tipo} | {ori} | {_n(c.area, 2)} | {_n(c.U, 2)} | {otros} |")
     a("")
 
@@ -147,9 +151,20 @@ def markdown(p: Proyecto, inv: ResultadoInvierno, ver: ResultadoVerano) -> str:
     a("## 5. Método y referencias")
     a("")
     a("- Calefacción: régimen estacionario según el planteamiento de UNE-EN 12831-1 (simplificado).")
-    a("- Refrigeración: cálculo horario del día de diseño; radiación solar con el modelo de cielo "
-      "despejado de ASHRAE; opacos con temperatura sol-aire y método de admitancias; huecos sin "
-      "factor de almacenamiento.")
+    if p.metodo_verano == "simplificado":
+        a("- Refrigeración (método simplificado): cálculo horario del día de diseño; opacos con "
+          "temperatura sol-aire y propiedades dinámicas UNE-EN ISO 13786; ganancia solar por huecos "
+          "instantánea (sin almacenamiento), del lado de la seguridad.")
+    else:
+        a("- Refrigeración (método dinámico): balance térmico horario del local con red de nodos "
+          "por capas, intercambio radiante interior y almacenamiento de la radiación solar y de "
+          "las ganancias internas en la masa del local (planteamiento de UNE-EN ISO 52016-1). "
+          "Validado contra EnergyPlus (ver `validacion/resultados.md`).")
+    if not p.descontar_perdidas_verano:
+        a("- En verano no se descuenta el calor que sale hacia locales o terreno más fríos "
+          "(lado de la seguridad); esos elementos sí cuentan como masa térmica.")
+    a("- Radiación solar: posición solar NREL-SPA y cielo despejado (pvlib); vidrios con "
+      "modificador por ángulo de incidencia. Psicrometría: CoolProp (ASHRAE RP-1485).")
     a("- Condiciones interiores y ventilación: RITE, IT 1.1.4.1.2 e IT 1.1.4.2.")
     a("- Documentación: RITE art. 15 (memoria técnica para 5 kW ≤ P ≤ 70 kW).")
     a("")

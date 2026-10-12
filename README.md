@@ -4,8 +4,9 @@
 Software libre pensado para instaladores e ingenieros que tienen que redactar la
 memoria técnica de una instalación de climatización.
 
-> Estado: **v0.1 — en desarrollo**. Funciona para un local, con entrada en YAML y salida
-> en Markdown/CSV. Buscamos colaboradores: ver [Cómo colaborar](#cómo-colaborar).
+> Estado: **v0.2 — en desarrollo**. Funciona para un local, con entrada en YAML y salida
+> en Markdown/CSV, y está **validado contra EnergyPlus** en 9 casos de referencia.
+> Buscamos colaboradores: ver [Cómo colaborar](#cómo-colaborar).
 
 ## ¿Para qué sirve?
 
@@ -13,8 +14,9 @@ En España, una instalación térmica de 5 a 70 kW necesita una **memoria técni
 art. 15) que justifique la potencia elegida. Este proyecto calcula, de forma
 **transparente y comprobable a mano**:
 
-- **Carga de refrigeración**: cálculo horario del día de diseño (24 h), con sensible y
-  latente, hora punta y desglose por componentes.
+- **Carga de refrigeración**: balance térmico horario del local (método dinámico, con el
+  almacenamiento de calor en la masa del local) o método simplificado conservador; sensible
+  y latente, hora punta y desglose exacto por componentes.
 - **Carga de calefacción**: régimen estacionario, desglose por cerramiento, ventilación
   e infiltración.
 - **Comprobaciones RITE**: condiciones interiores (IT 1.1.4.1.2), caudal de ventilación por
@@ -30,8 +32,8 @@ cargas-rite ejemplos/local_comercial.yaml --csv horario.csv
 ```
 
 ```
-Refrigeración: 10.19 kW (sensible 8.79, latente 1.40) a las 17:00 h
-Calefacción:   7.41 kW
+Refrigeración: 6.73 kW (sensible 5.36, latente 1.37) a las 17:00 h
+Calefacción:   8.69 kW
 Informe: ejemplos/local_comercial.md
 ```
 
@@ -53,27 +55,47 @@ cerramientos:
 
 ## Método de cálculo
 
-Resumen (detalle en [`docs/metodologia.md`](docs/metodologia.md)):
+Resumen (detalle en [`docs/metodologia.md`](docs/metodologia.md) y normas aplicadas en
+[`docs/normativa.md`](docs/normativa.md)):
 
-| Carga | Método |
-|---|---|
-| Calefacción | Estacionario, planteamiento UNE-EN 12831-1 simplificado. Sin descontar ganancias. |
-| Refrigeración, opacos | Temperatura sol-aire + método de admitancias (amortiguamiento y desfase) |
-| Refrigeración, huecos | Conducción + radiación solar instantánea (cielo despejado ASHRAE) |
-| Cargas internas | Ocupantes (sensible/latente), iluminación y equipos en horario de uso |
-| Aire exterior | Ventilación con recuperador opcional + infiltración, sensible y latente |
+| Parte | Método | Base |
+|---|---|---|
+| Cerramientos | U por capas y propiedades dinámicas (amortiguamiento, desfase) | UNE-EN ISO 6946, UNE-EN ISO 13786 |
+| Calefacción | Estacionario, sin descontar ganancias | UNE-EN 12831-1 (simplificado) |
+| Refrigeración | Balance térmico horario con red de nodos por capas y masa interior | Planteamiento UNE-EN ISO 52016-1 |
+| Radiación solar | Posición SPA, cielo despejado ASHRAE/Ineichen, transposición de Perez, IAM de vidrios | pvlib |
+| Aire húmedo | Propiedades reales a la altitud del lugar | CoolProp (ASHRAE RP-1485) |
+| Condiciones y ventilación | Interiores, IDA, recuperación | RITE IT 1.1.4 e IT 1.2.4.5.2 |
 
-Todas las fórmulas están en el código, comentadas, y cada componente aparece en el informe.
+## Validación
+
+Cada cambio se comprueba con **78 pruebas automáticas**: tablas de ASHRAE (psicrometría),
+geometría solar, una simulación numérica independiente (ISO 13786), conservación de la
+energía del modelo dinámico y comparación con **EnergyPlus 26.1** (programa del
+Departamento de Energía de EE. UU. validado con ANSI/ASHRAE 140):
+
+| Caso | EnergyPlus | Dinámico | Desv. | Simplificado | Desv. | Calefacción desv. |
+|---|---:|---:|---:|---:|---:|---:|
+| Fachada S con ventana | 380 W | 459 W | +21 % | 885 W | +133 % | +11 % |
+| Fachada O con ventana | 753 W | 718 W | −5 % | 1.790 W | +138 % | +11 % |
+| Fachada E con ventana | 691 W | 664 W | −4 % | 1.706 W | +147 % | +11 % |
+| Muro de hormigón 25 cm | 421 W | 381 W | −10 % | 756 W | +79 % | +15 % |
+| Cubierta | 108 W | 145 W | +35 % | 159 W | +47 % | −8 % |
+| Ganancias internas | 956 W | 983 W | +3 % | 1.110 W | +16 % | — |
+| Local completo | 1.895 W | 2.101 W | **+11 %** | 3.299 W | +74 % | +12 % |
+
+Tabla completa y cómo reproducirla en [`validacion/`](validacion).
 
 ## Hoja de ruta
 
 Ver [`ROADMAP.md`](ROADMAP.md). En resumen:
 
 1. **v0.1** — un local, YAML → informe (✅ hecho)
-2. **v0.2** — base de datos climática (Guía IDAE), biblioteca de cerramientos CTE, salida Excel/Word
-3. **v0.3** — varios locales y zonas, simultaneidad
-4. **v0.4** — interfaz: paleta en GstarCAD/AutoCAD, plugin IngeTrazo
-5. **v1.0** — motor avanzado opcional con EnergyPlus (Honeybee/OpenStudio) y validación cruzada
+2. **v0.2** — cerramientos por capas, método dinámico, librerías validadas, validación con EnergyPlus (✅ hecho)
+3. **v0.3** — datos españoles (Guía IDAE, Catálogo CTE), métodos completos UNE-EN 12831-1 y 52016-1, salida Excel/Word
+4. **v0.4** — varios locales y zonas, simultaneidad
+5. **v0.5** — interfaz: paleta en GstarCAD/AutoCAD, plugin IngeTrazo
+6. **v1.0** — exportación a EnergyPlus/DesignBuilder (gbXML) para casos complejos
 
 ## Cómo colaborar
 

@@ -1,22 +1,30 @@
-# Ejemplo: local comercial en planta baja entre medianeras.
-# Todas las dimensiones en m, m², W, °C. Áreas de muro NETAS (sin huecos).
+# Ejemplo: local comercial en planta baja entre medianeras, con viviendas encima.
+# Unidades: m, m², W, °C. Áreas de muro NETAS (sin huecos).
+# Capas siempre de INTERIOR a EXTERIOR: espesor [m], conductividad λ [W/mK],
+# densidad ρ [kg/m³], calor_especifico c [J/kgK]. Con capas se calculan U (ISO 6946)
+# y amortiguamiento/desfase (ISO 13786). También se puede dar sólo 'U'.
 
 proyecto:
   titulo: "Local comercial — ejemplo"
   autor: ""
 
+metodo_verano: dinamico        # dinamico (por defecto) | simplificado (conservador)
+
 clima:
   latitud: 40.41
   longitud: -3.70
   altitud: 667
-  diferencia_horaria: 2        # hora oficial - UTC (verano peninsular = 2)
+  diferencia_horaria: 2        # hora oficial - UTC en el mes de cálculo (verano peninsular = 2)
+  huso: 1                      # hora estándar - UTC (península 1, Canarias 0)
   mes_verano: 7
+  modelo_cielo: ashrae         # ashrae | ineichen
   invierno:
     temperatura_seca: -3.0     # ILUSTRATIVO: sustituir por el percentil de la Guía IDAE
   verano:
     temperatura_seca: 36.0     # ILUSTRATIVO
     temperatura_humeda_coincidente: 21.5
     oscilacion_media_diaria: 15.0
+    viento: 2.0                # m/s, para el coeficiente exterior de verano
   fuente: "Valores ilustrativos. Usar la Guía técnica IDAE 'Condiciones climáticas exteriores de proyecto'."
 
 interior:
@@ -28,7 +36,7 @@ local:
   superficie: 85.0
   altura: 3.0
   ocupacion:
-    actividad: comercio
+    actividad: comercio        # ver cargas_rite/datos/actividades.yaml
     m2_por_persona: 5          # o bien 'personas: 17'
   iluminacion: 10              # W/m²
   equipos: 5                   # W/m²
@@ -44,17 +52,21 @@ cerramientos:
     tipo: muro
     orientacion: SO
     area: 14.0
-    U: 0.60
     absortividad: 0.6
-    inercia: media
+    capas:
+      - {nombre: enlucido de yeso, espesor: 0.015, conductividad: 0.57, densidad: 1150, calor_especifico: 1000}
+      - {nombre: ladrillo hueco,   espesor: 0.07,  conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
+      - {nombre: lana mineral,     espesor: 0.05,  conductividad: 0.037, densidad: 40,  calor_especifico: 1000}
+      - {nombre: ladrillo perforado, espesor: 0.115, conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
   - nombre: Escaparate SO
     tipo: ventana
     orientacion: SO
     area: 10.0
-    U: 3.0
-    g: 0.60
+    U: 3.0                     # ventana completa (vidrio + marco)
+    g: 0.60                    # factor solar del vidrio a incidencia normal
     fraccion_marco: 0.15
     factor_sombra: 0.8         # toldo / retranqueo
+    hojas: 2                   # nº de vidrios (corrección por ángulo de incidencia)
   - nombre: Medianera izquierda
     tipo: particion
     area: 45.0
@@ -67,14 +79,29 @@ cerramientos:
     temperatura_adyacente: {invierno: 12, verano: 30}
   - nombre: Forjado a viviendas
     tipo: particion
+    posicion: techo
     area: 85.0
-    U: 1.50
     temperatura_adyacente: {invierno: 20, verano: 26}
+    capas:
+      - {nombre: falso techo placa, espesor: 0.015, conductividad: 0.25, densidad: 900, calor_especifico: 1000}
+      - {nombre: cámara,            espesor: 0.30,  resistencia: 0.16}
+      - {nombre: forjado,           espesor: 0.30,  conductividad: 1.32, densidad: 1500, calor_especifico: 1000}
   - nombre: Solera
     tipo: suelo
     area: 85.0
-    U: 0.50
     temperatura_adyacente: {invierno: 12, verano: 18}
+    capas:
+      - {nombre: baldosa,  espesor: 0.02, conductividad: 1.3, densidad: 2300, calor_especifico: 840}
+      - {nombre: mortero,  espesor: 0.04, conductividad: 1.3, densidad: 1900, calor_especifico: 1000}
+      - {nombre: solera,   espesor: 0.15, conductividad: 1.65, densidad: 2150, calor_especifico: 1000}
+
+# Superficies interiores sin pérdidas que almacenan calor (sólo método dinámico).
+masas_interiores:
+  - nombre: Tabiques del almacén
+    area: 20.0
+    posicion: vertical
+    capas:
+      - {nombre: ladrillo hueco, espesor: 0.07, conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
 
 coeficientes:
   puentes_termicos_dU: 0.10

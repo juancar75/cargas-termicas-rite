@@ -9,6 +9,7 @@ jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.10", "3.13"]
@@ -20,3 +21,25 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
       - run: cargas-rite ejemplos/local_comercial.yaml -o informe.md
+
+  validacion-energyplus:
+    runs-on: ubuntu-24.04
+    env:
+      EP_URL: https://github.com/NREL/EnergyPlus/releases/download/v26.1.0/EnergyPlus-26.1.0-6f2e40d102-Linux-Ubuntu24.04-x86_64.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar EnergyPlus 26.1
+        run: |
+          mkdir -p $HOME/energyplus
+          curl -sSL "$EP_URL" | tar xz -C $HOME/energyplus --strip-components=1
+          echo "ENERGYPLUS=$HOME/energyplus/energyplus" >> $GITHUB_ENV
+      - run: pip install -e ".[dev]"
+      - run: pytest -q tests/test_validacion_energyplus.py
+      - run: python validacion/energyplus.py --salida resultados.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validacion-energyplus
+          path: resultados.md

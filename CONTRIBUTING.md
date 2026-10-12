@@ -27,8 +27,10 @@ Normas:
 2. Todo cálculo nuevo con su **test** y, si es posible, un caso comprobado a mano.
 3. Fórmulas comentadas en el código con su referencia normativa.
 4. Nombres de variables y comentarios en español; código Python ≥ 3.10.
-5. Sin dependencias pesadas en el núcleo (sólo PyYAML). Las integraciones
-   (EnergyPlus, CAD) van en `integraciones/` como extras opcionales.
+5. Antes de programar algo, mira si existe una librería libre y validada que lo haga
+   (como CoolProp o pvlib). Las integraciones (CAD, IngeTrazo) van en `integraciones/`.
+6. Si el cambio afecta al cálculo, ejecuta también la validación contra EnergyPlus
+   (`validacion/README.md`) y actualiza `validacion/resultados.md`.
 
 ## Datos con derechos de autor
 

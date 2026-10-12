@@ -8,8 +8,9 @@ Componentes:
   * Muros y cubiertas exteriores: temperatura sol-aire y método de admitancias
         Q(h) = U·A·[(θsa,m − θi) + f·(θsa(h−φ) − θsa,m)]
     con f = factor de amortiguamiento y φ = desfase [h].
-  * Huecos: conducción U·A·(θe − θi) + radiación A·(1−FM)·g·Fs·I(h)
-    (ganancia solar instantánea, sin factor de almacenamiento: lado de la seguridad).
+  * Huecos: conducción U·A·(θe − θi) + radiación A·(1−FM)·g⊥·Fs·[Ib·IAM(θ) + Id·IAMd]
+    con el modificador por ángulo de incidencia del vidrio (Fresnel). La ganancia
+    se considera instantánea (sin almacenamiento): lado de la seguridad.
   * Particiones a espacios no climatizados: U·A·(θady − θi), sólo si es positiva.
   * Ocupantes, iluminación y equipos en horario de ocupación.
   * Ventilación (en horario) e infiltración (24 h): sensible y latente.
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 
 from . import solar
 from .modelo import Proyecto
-from .psicrometria import (RHO_CP_AIRE, RHO_HFG_AIRE, humedad_especifica_desde_bulbo_humedo,
+from .psicrometria import (coeficientes_aire, humedad_especifica_desde_bulbo_humedo,
                            humedad_especifica_desde_hr, presion_atmosferica)
 
 # Fracción de la oscilación diaria por hora solar 1..24 (ASHRAE Fundamentals).
@@ -84,10 +85,6 @@ class ResultadoVerano:
         return self.sensible + self.latente
 
 
-def _hora_solar(p: Proyecto, hora_oficial: float) -> float:
-    return hora_oficial - p.clima.diferencia_horaria + p.clima.longitud / 15.0
-
-
 def calcular_verano(p: Proyecto) -> ResultadoVerano:
     cl, it, lo, ve = p.clima, p.interior, p.local, p.ventilacion
     ti = it.t_verano
@@ -95,28 +92,43 @@ def calcular_verano(p: Proyecto) -> ResultadoVerano:
     w_ext = humedad_especifica_desde_bulbo_humedo(cl.t_verano, cl.th_verano, pa)
     w_int = humedad_especifica_desde_hr(ti, it.hr_verano, pa)
     dw = max(w_ext - w_int, 0.0)
+    RHO_CP_AIRE, RHO_HFG_AIRE = coeficientes_aire(cl.t_verano, w_ext, pa)
+    cambio_hora = cl.diferencia_horaria - cl.huso   # 1 h en horario de verano
 
-    def t_ext(hs: float) -> float:
-        return cl.t_verano - cl.oscilacion_diaria * fraccion_oscilacion(hs)
+    def t_ext(h_oficial: float) -> float:
+        # El perfil de ASHRAE está referido a la hora estándar local.
+        return cl.t_verano - cl.oscilacion_diaria * fraccion_oscilacion(h_oficial - cambio_hora)
 
-    def irr(c, hs: float) -> float:
-        return solar.irradiancia(cl.latitud, cl.mes_verano, hs, c.orientacion,
-                                 c.inclinacion, claridad=cl.claridad)
+    perfiles = {}
+    for c in p.cerramientos:
+        if c.exterior:
+            ps = solar.perfil(
+                cl.latitud, cl.longitud, cl.altitud, cl.mes_verano, cl.diferencia_horaria,
+                c.orientacion, c.inclinacion, modelo=cl.modelo_cielo,
+                claridad=cl.claridad, albedo=cl.albedo)
+            perfiles[c.nombre] = (ps.horas, ps.total)
+            if c.tipo == "ventana":
+                perfiles[c.nombre + "#vidrio"] = (ps.horas, ps.transmitida_vidrio(c.hojas))
 
-    def t_sol_aire(c, hs: float) -> float:
+    def irr(c, h: float) -> float:
+        return solar.interpolar(*perfiles[c.nombre], h)
+
+    def irr_vidrio(c, h: float) -> float:
+        return solar.interpolar(*perfiles[c.nombre + "#vidrio"], h)
+
+    def t_sol_aire(c, h: float) -> float:
         corr = DELTA_R_HORIZ if c.inclinacion == 0 else 0.0
-        return t_ext(hs) + c.absortividad * irr(c, hs) / H_EXT - corr
+        return t_ext(h) + c.absortividad * irr(c, h) / H_EXT - corr
 
-    # temperatura sol-aire media diaria de cada opaco exterior
+    # temperatura sol-aire media diaria de cada opaco exterior (paso de 15 min)
     opacos = [c for c in p.cerramientos if c.exterior and c.tipo in ("muro", "cubierta")]
-    tsa_media = {c.nombre: sum(t_sol_aire(c, _hora_solar(p, h)) for h in range(1, 25)) / 24
-                 for c in opacos}
+    tsa_media = {c.nombre: sum(t_sol_aire(c, k / 4) for k in range(96)) / 96 for c in opacos}
 
     h_ini, h_fin = lo.horario
     horas: list[HoraVerano] = []
     for h in range(1, 25):
-        hs = _hora_solar(p, h)
-        te = t_ext(hs)
+        hs = h
+        te = t_ext(h)
         hv = HoraVerano(hora=h, t_ext=te)
         ocupado = h_ini <= h < h_fin if h_ini < h_fin else (h >= h_ini or h < h_fin)
         for c in p.cerramientos:
@@ -125,7 +137,7 @@ def calcular_verano(p: Proyecto) -> ResultadoVerano:
                 hv.componentes[c.nombre] = max(q, 0.0)
             elif c.tipo == "ventana":
                 cond = c.U * c.area * (te - ti)
-                rad = c.area * (1 - c.fraccion_marco) * c.g * c.factor_sombra * irr(c, hs)
+                rad = c.area * (1 - c.fraccion_marco) * c.g * c.factor_sombra * irr_vidrio(c, hs)
                 hv.componentes[f"{c.nombre} (conducción)"] = cond
                 hv.componentes[f"{c.nombre} (solar)"] = rad
             else:

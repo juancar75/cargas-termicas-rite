@@ -7,6 +7,8 @@ from typing import Optional
 
 import yaml
 
+from .cerramientos import Capa, propiedades, resistencias_superficiales
+
 ORIENTACIONES = {
     "N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180,
     "SO": 225, "SW": 225, "O": 270, "W": 270, "NO": 315, "NW": 315,
@@ -41,8 +43,17 @@ class Cerramiento:
     g: float = 0.0                               # factor solar del vidrio
     fraccion_marco: float = 0.25
     factor_sombra: float = 1.0
+    hojas: int = 2                               # nº de vidrios (IAM)
     temperatura_adyacente_invierno: Optional[float] = None
     temperatura_adyacente_verano: Optional[float] = None
+    capas: Optional[list[Capa]] = None          # de interior a exterior
+    posicion_explicita: Optional[str] = None     # vertical | suelo | techo
+
+    @property
+    def posicion(self) -> str:
+        if self.posicion_explicita:
+            return self.posicion_explicita
+        return {"cubierta": "techo", "suelo": "suelo"}.get(self.tipo, "vertical")
 
     @property
     def exterior(self) -> bool:
@@ -66,6 +77,10 @@ class Clima:
     oscilacion_diaria: float
     fuente: str = ""
     claridad: float = 1.0
+    huso: float = 1.0                  # hora estándar - UTC (península 1, Canarias 0)
+    modelo_cielo: str = "ashrae"       # "ashrae" o "ineichen"
+    albedo: float = 0.2
+    viento_verano: float = 2.0         # m/s, para el coeficiente exterior de verano
 
 
 @dataclass
@@ -87,6 +102,10 @@ class Local:
     iluminacion_wm2: float
     equipos_wm2: float
     horario: tuple[int, int]
+    # Fracción radiante de las ganancias (orientativas, ASHRAE Fundamentals cap. 18)
+    fraccion_radiante_personas: float = 0.6
+    fraccion_radiante_iluminacion: float = 0.55
+    fraccion_radiante_equipos: float = 0.3
 
     @property
     def volumen(self) -> float:
@@ -102,6 +121,15 @@ class Ventilacion:
 
 
 @dataclass
+class MasaInterior:
+    """Superficie interior sin pérdidas (tabique, forjado entre locales climatizados)."""
+    nombre: str
+    area: float
+    capas: list[Capa]
+    posicion: str = "vertical"        # vertical | suelo | techo
+
+
+@dataclass
 class Proyecto:
     titulo: str
     autor: str
@@ -112,6 +140,9 @@ class Proyecto:
     cerramientos: list[Cerramiento]
     dU_puentes_termicos: float = 0.10
     mayoracion: float = 0.0
+    masas_interiores: list[MasaInterior] = field(default_factory=list)
+    metodo_verano: str = "dinamico"   # dinamico | simplificado
+    descontar_perdidas_verano: bool = False   # restar en verano el calor hacia locales más fríos
     avisos: list[str] = field(default_factory=list)
 
 
@@ -139,13 +170,35 @@ def _req(d: dict, clave: str, ctx: str):
     return d[clave]
 
 
+def _capas(lista: list) -> list[Capa]:
+    return [Capa(nombre=str(k.get("nombre", f"capa {i + 1}")),
+                 espesor=float(k.get("espesor", 0.0)),
+                 conductividad=float(k.get("conductividad", 1.0)),
+                 densidad=float(k.get("densidad", 0.0)),
+                 calor_especifico=float(k.get("calor_especifico", 1000.0)),
+                 resistencia=(float(k["resistencia"]) if "resistencia" in k else None))
+            for i, k in enumerate(lista)]
+
+
+def _masa(d: dict) -> MasaInterior:
+    nombre = _req(d, "nombre", "masa interior")
+    pos = str(d.get("posicion", "vertical")).lower()
+    if pos not in ("vertical", "suelo", "techo"):
+        raise ErrorDatos(f"{nombre}: posicion debe ser vertical, suelo o techo")
+    return MasaInterior(nombre, float(_req(d, "area", nombre)),
+                        _capas(_req(d, "capas", nombre)), pos)
+
+
 def _cerramiento(d: dict) -> Cerramiento:
     nombre = _req(d, "nombre", "cerramiento")
     tipo = str(_req(d, "tipo", nombre)).lower()
     if tipo not in TIPOS:
         raise ErrorDatos(f"{nombre}: tipo '{tipo}' no válido ({', '.join(sorted(TIPOS))})")
-    c = Cerramiento(nombre=nombre, tipo=tipo,
-                    area=float(_req(d, "area", nombre)), U=float(_req(d, "U", nombre)))
+    capas = d.get("capas")
+    if capas is None and "U" not in d:
+        raise ErrorDatos(f"{nombre}: indica 'U' o 'capas'")
+    c = Cerramiento(nombre=nombre, tipo=tipo, area=float(_req(d, "area", nombre)),
+                    U=float(d.get("U", 1.0)))
     ady = d.get("temperatura_adyacente")
     if ady is not None:
         c.temperatura_adyacente_invierno = float(_req(ady, "invierno", nombre))
@@ -162,10 +215,29 @@ def _cerramiento(d: dict) -> Cerramiento:
     f, phi = INERCIA.get(str(inercia).lower(), INERCIA["media"])
     c.factor_amortiguamiento = float(d.get("factor_amortiguamiento", f))
     c.desfase_h = float(d.get("desfase_h", phi))
+    if "posicion" in d:
+        pos = str(d["posicion"]).lower()
+        if pos not in ("vertical", "suelo", "techo"):
+            raise ErrorDatos(f"{nombre}: posicion debe ser vertical, suelo o techo")
+        c.posicion_explicita = pos
+    if capas is not None:
+        if tipo == "ventana":
+            raise ErrorDatos(f"{nombre}: las ventanas se definen con U y g, no por capas")
+        lista = _capas(capas)
+        tipo_rs = {"techo": "cubierta", "suelo": "suelo"}.get(c.posicion, tipo)
+        rsi, rse = resistencias_superficiales(tipo_rs, c.exterior)
+        prop = propiedades(lista, rsi, rse)
+        c.capas = lista
+        c.U = prop.U
+        if "factor_amortiguamiento" not in d:
+            c.factor_amortiguamiento = prop.amortiguamiento
+        if "desfase_h" not in d:
+            c.desfase_h = prop.desfase_h
     if tipo == "ventana":
         c.g = float(_req(d, "g", nombre))
         c.fraccion_marco = float(d.get("fraccion_marco", 0.25))
         c.factor_sombra = float(d.get("factor_sombra", 1.0))
+        c.hojas = int(d.get("hojas", 2))
     if c.area <= 0 or c.U <= 0:
         raise ErrorDatos(f"{nombre}: área y U deben ser positivas")
     return c
@@ -195,7 +267,15 @@ def desde_dict(d: dict) -> Proyecto:
         oscilacion_diaria=float(_req(ver, "oscilacion_media_diaria", "clima.verano")),
         fuente=str(cl.get("fuente", "")),
         claridad=float(cl.get("claridad", 1.0)),
+        huso=float(cl.get("huso", 1.0)),
+        modelo_cielo=str(cl.get("modelo_cielo", "ashrae")).lower(),
+        albedo=float(cl.get("albedo", 0.2)),
+        viento_verano=float(ver.get("viento", 2.0)),
     )
+    if clima.modelo_cielo not in ("ashrae", "ineichen"):
+        raise ErrorDatos("clima.modelo_cielo debe ser 'ashrae' o 'ineichen'")
+    if clima.th_verano > clima.t_verano:
+        raise ErrorDatos("La temperatura húmeda de verano no puede superar a la seca")
 
     it = d.get("interior", {})
     interior = Interior(
@@ -234,6 +314,10 @@ def desde_dict(d: dict) -> Proyecto:
         equipos_wm2=float(lo.get("equipos", 0.0)),
         horario=(int(horario[0]), int(horario[1])),
     )
+    fr = lo.get("fracciones_radiantes", {})
+    local.fraccion_radiante_personas = float(fr.get("personas", 0.6))
+    local.fraccion_radiante_iluminacion = float(fr.get("iluminacion", 0.55))
+    local.fraccion_radiante_equipos = float(fr.get("equipos", 0.3))
 
     ve = d.get("ventilacion", {})
     ida = ve.get("categoria_ida")
@@ -256,6 +340,9 @@ def desde_dict(d: dict) -> Proyecto:
                       "recuperación de calor del aire de extracción.")
 
     cerr = [_cerramiento(c) for c in _req(d, "cerramientos", "raíz")]
+    metodo = str(d.get("metodo_verano", "dinamico")).lower()
+    if metodo not in ("dinamico", "simplificado"):
+        raise ErrorDatos("metodo_verano debe ser 'dinamico' o 'simplificado'")
     co = d.get("coeficientes", {})
     return Proyecto(
         titulo=str(p.get("titulo", "Cálculo de cargas")),
@@ -264,5 +351,8 @@ def desde_dict(d: dict) -> Proyecto:
         cerramientos=cerr,
         dU_puentes_termicos=float(co.get("puentes_termicos_dU", 0.10)),
         mayoracion=float(co.get("mayoracion", 0.0)),
+        masas_interiores=[_masa(m) for m in d.get("masas_interiores", [])],
+        metodo_verano=metodo,
+        descontar_perdidas_verano=bool(co.get("descontar_perdidas_verano", False)),
         avisos=avisos,
     )

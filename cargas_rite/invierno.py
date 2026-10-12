@@ -4,8 +4,11 @@ Método basado en UNE-EN 12831-1 simplificado:
     Φ_T = Σ (U + ΔU_pt) · A · (θi − θe)       elementos exteriores opacos
         + Σ U · A · (θi − θe)                 huecos exteriores
         + Σ U · A · (θi − θady)               elementos a espacios no calefactados / terreno
-    Φ_V = 0,34 · V̇_vent · (1 − η_rec) · (θi − θe)
-    Φ_inf = 0,34 · n · Vol · (θi − θe)
+    Φ_V = ρc · V̇_vent · (1 − η_rec) · (θi − θe)
+    Φ_inf = ρc · n · Vol · (θi − θe)
+
+ρc se calcula con CoolProp a la presión de la altitud del lugar y la temperatura
+exterior de diseño (≈ 0,34 W·h/(m³·K) a nivel del mar).
 
 No se descuentan ganancias internas ni solares (criterio del lado de la seguridad).
 """
@@ -14,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .modelo import Proyecto
-from .psicrometria import RHO_CP_AIRE
+from .psicrometria import coeficientes_aire, humedad_especifica_desde_hr, presion_atmosferica
 
 
 @dataclass
@@ -24,6 +27,7 @@ class ResultadoInvierno:
     ventilacion: float = 0.0
     infiltracion: float = 0.0
     mayoracion: float = 0.0
+    coef_aire: float = 0.34
 
     @property
     def total_transmision(self) -> float:
@@ -42,6 +46,9 @@ def calcular_invierno(p: Proyecto) -> ResultadoInvierno:
     ti = p.interior.t_invierno
     te = p.clima.t_invierno
     r = ResultadoInvierno(delta_t=ti - te)
+    pa = presion_atmosferica(p.clima.altitud)
+    RHO_CP_AIRE, _ = coeficientes_aire(te, humedad_especifica_desde_hr(te, 0.9, pa), pa)
+    r.coef_aire = RHO_CP_AIRE
     for c in p.cerramientos:
         if c.exterior:
             u = c.U + (p.dU_puentes_termicos if c.tipo in ("muro", "cubierta") else 0.0)
