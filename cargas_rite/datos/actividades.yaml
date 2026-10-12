@@ -1,0 +1,15 @@
+# Ganancias por ocupante [W/persona], valores ajustados.
+# Fuente: ASHRAE Handbook — Fundamentals, capítulo "Nonresidential Cooling and
+# Heating Load Calculations", tabla de ganancias de calor por ocupantes.
+# Revisar contra la edición utilizada antes de usar en un proyecto.
+# Se puede sobrescribir por proyecto con local.ocupacion.sensible_persona / latente_persona.
+
+teatro:            {sensible: 65, latente: 30, descripcion: "Sentado en reposo (cine, teatro)"}
+oficina:           {sensible: 70, latente: 45, descripcion: "Sentado, trabajo muy ligero (oficina, hotel, vivienda)"}
+oficina_activa:    {sensible: 75, latente: 55, descripcion: "Trabajo de oficina moderadamente activo"}
+comercio:          {sensible: 75, latente: 55, descripcion: "De pie, trabajo ligero; caminando (tienda)"}
+banco:             {sensible: 75, latente: 70, descripcion: "Caminando, de pie (farmacia, banco)"}
+restaurante:       {sensible: 80, latente: 80, descripcion: "Sentado comiendo (restaurante)"}
+taller_ligero:     {sensible: 80, latente: 140, descripcion: "Trabajo ligero de banco (taller)"}
+baile:             {sensible: 90, latente: 160, descripcion: "Baile moderado"}
+gimnasio:          {sensible: 210, latente: 315, descripcion: "Deporte / ejercicio intenso"}

@@ -1,0 +1,6 @@
+# Caudal mínimo de aire exterior por persona — RITE, IT 1.1.4.2.3, método indirecto
+# de caudal de aire exterior por persona (tabla 1.4.2.1).
+IDA1: {dm3_s_persona: 20.0, descripcion: "Aire de óptima calidad (hospitales, laboratorios, guarderías)"}
+IDA2: {dm3_s_persona: 12.5, descripcion: "Aire de buena calidad (oficinas, residencias, aulas, museos)"}
+IDA3: {dm3_s_persona: 8.0,  descripcion: "Aire de calidad media (comercios, restaurantes, cines, gimnasios)"}
+IDA4: {dm3_s_persona: 5.0,  descripcion: "Aire de calidad baja"}

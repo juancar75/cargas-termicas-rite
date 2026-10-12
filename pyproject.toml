@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cargas-termicas-rite"
+version = "0.1.0"
+description = "Justificación de cargas térmicas de invierno y verano de un local climatizado según el RITE"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Juan Carlos Cortés Molinera" }]
+keywords = ["RITE", "cargas térmicas", "climatización", "HVAC", "CTE", "UNE-EN 12831"]
+dependencies = ["PyYAML>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+cargas-rite = "cargas_rite.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cargas_rite*"]
+
+[tool.setuptools.package-data]
+cargas_rite = ["datos/*.yaml"]

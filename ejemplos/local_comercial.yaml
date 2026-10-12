@@ -1,0 +1,81 @@
+# Ejemplo: local comercial en planta baja entre medianeras.
+# Todas las dimensiones en m, m², W, °C. Áreas de muro NETAS (sin huecos).
+
+proyecto:
+  titulo: "Local comercial — ejemplo"
+  autor: ""
+
+clima:
+  latitud: 40.41
+  longitud: -3.70
+  altitud: 667
+  diferencia_horaria: 2        # hora oficial - UTC (verano peninsular = 2)
+  mes_verano: 7
+  invierno:
+    temperatura_seca: -3.0     # ILUSTRATIVO: sustituir por el percentil de la Guía IDAE
+  verano:
+    temperatura_seca: 36.0     # ILUSTRATIVO
+    temperatura_humeda_coincidente: 21.5
+    oscilacion_media_diaria: 15.0
+  fuente: "Valores ilustrativos. Usar la Guía técnica IDAE 'Condiciones climáticas exteriores de proyecto'."
+
+interior:
+  invierno: {temperatura: 21, humedad_relativa: 0.40}
+  verano:   {temperatura: 25, humedad_relativa: 0.50}
+
+local:
+  nombre: "Sala de ventas"
+  superficie: 85.0
+  altura: 3.0
+  ocupacion:
+    actividad: comercio
+    m2_por_persona: 5          # o bien 'personas: 17'
+  iluminacion: 10              # W/m²
+  equipos: 5                   # W/m²
+  horario: [10, 21]            # hora oficial
+
+ventilacion:
+  categoria_ida: IDA3          # o 'caudal_m3h: 500'
+  eficiencia_recuperador: 0.0
+  infiltracion_renovaciones_h: 0.3
+
+cerramientos:
+  - nombre: Fachada SO
+    tipo: muro
+    orientacion: SO
+    area: 14.0
+    U: 0.60
+    absortividad: 0.6
+    inercia: media
+  - nombre: Escaparate SO
+    tipo: ventana
+    orientacion: SO
+    area: 10.0
+    U: 3.0
+    g: 0.60
+    fraccion_marco: 0.15
+    factor_sombra: 0.8         # toldo / retranqueo
+  - nombre: Medianera izquierda
+    tipo: particion
+    area: 45.0
+    U: 1.20
+    temperatura_adyacente: {invierno: 18, verano: 27}
+  - nombre: Medianera derecha (local sin uso)
+    tipo: particion
+    area: 45.0
+    U: 1.20
+    temperatura_adyacente: {invierno: 12, verano: 30}
+  - nombre: Forjado a viviendas
+    tipo: particion
+    area: 85.0
+    U: 1.50
+    temperatura_adyacente: {invierno: 20, verano: 26}
+  - nombre: Solera
+    tipo: suelo
+    area: 85.0
+    U: 0.50
+    temperatura_adyacente: {invierno: 12, verano: 18}
+
+coeficientes:
+  puentes_termicos_dU: 0.10
+  mayoracion: 0.10
