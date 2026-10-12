@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cargas-termicas-rite"
-version = "0.2.0"
+version = "0.3.0"
 description = "Justificación de cargas térmicas de invierno y verano de un local climatizado según el RITE"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,9 +18,10 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 cargas-rite = "cargas_rite.cli:main"
+cargas-rite-buscar = "cargas_rite.buscar:main"
 
 [tool.setuptools.packages.find]
 include = ["cargas_rite*"]
 
 [tool.setuptools.package-data]
-cargas_rite = ["datos/*.yaml"]
+cargas_rite = ["datos/*.yaml", "datos/*.json"]

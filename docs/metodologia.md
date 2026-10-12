@@ -40,8 +40,31 @@ horizontal / ascendente / descendente; Rse = 0,04 m²K/W; hacia otro local Rse =
 contra una simulación por diferencias finitas independiente (error < 0,5 % en f y
 < 0,15 h en φ).
 
-Cada cerramiento se puede dar por su U (y la inercia ligera/media/pesada) o por
-capas (espesor, λ, ρ, c), de interior a exterior.
+Cada cerramiento se puede dar por su U (y la inercia ligera/media/pesada), por capas
+(de interior a exterior) o como una solución completa del catálogo del CTE. Cada capa
+puede ser un material del catálogo (`material:` + `espesor:`) o propia (λ, ρ, c).
+
+**Catálogo del CTE.** Base de datos de materiales y productos del CTE (la de HULC):
+761 materiales, 425 soluciones constructivas, 258 vidrios y 17 marcos. Para los
+vidrios, g⊥ = 0,85 · SC (convenio de HULC). Buscador:
+`python -m cargas_rite.buscar <palabras>`.
+
+**Huecos del catálogo.** U_H = (1 − FM)·U_vidrio + FM·U_marco (DA DB-HE/1).
+
+**Soleras sobre el terreno** (`terreno:`). UNE-EN ISO 13370 vía DA DB-HE/1:
+B' = A / (0,5·P), d_t = w + λ_g·(Rsi + Rf + Rse) con w = 0,30 m y λ_g = 2 W/mK;
+U_bf por las ecuaciones (11) o (12) según d_t + z/2 frente a B', más el efecto del
+aislamiento perimetral horizontal (anexo B). La temperatura del terreno es la media
+anual exterior. En el método dinámico, el terreno se representa como una resistencia
+adicional bajo la solera, de forma que la U coincide con la de la norma.
+
+**Espacios no acondicionados** (`espacio_no_acondicionado:`). UNE-EN ISO 13789 vía
+DA DB-HE/1: H_ue = ΣU·A + 0,33·n·V, b = H_ue / (H_iu + H_ue) y θu = θi − b·(θi − θe),
+en invierno y en verano (sin ganancias en el espacio no acondicionado).
+
+**Puentes térmicos** (`puentes_termicos:`). ψ·L por encuentro con los tipos de
+UNE-EN ISO 14683. Si se indican, no se aplica el incremento global ΔU. Se consideran
+sin inercia en verano.
 
 ## 3. Calefacción
 

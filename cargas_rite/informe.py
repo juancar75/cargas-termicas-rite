@@ -97,10 +97,28 @@ def markdown(p: Proyecto, inv: ResultadoInvierno, ver: ResultadoVerano) -> str:
                      f"φ={_n(c.desfase_h, 1)} h")
         else:
             otros = ""
-        if c.capas:
-            otros = (otros + "; " if otros else "") + f"{len(c.capas)} capas (ISO 6946/13786)"
+        extra = []
+        if c.origen:
+            extra.append(c.origen)
+        elif c.capas:
+            extra.append(f"{len(c.capas)} capas (ISO 6946/13786)")
+        if c.terreno:
+            extra.append(f"terreno ISO 13370: B'={_n(c.terreno['B'], 1)} m, "
+                         f"d_t={_n(c.terreno['d_t'], 2)} m")
+        if c.espacio_no_acondicionado:
+            extra.append(f"no acondicionado, b={_n(c.espacio_no_acondicionado['b'], 2)} (ISO 13789)")
+        if extra:
+            otros = "; ".join([otros] + extra if otros else extra)
         a(f"| {c.nombre} | {c.tipo} | {ori} | {_n(c.area, 2)} | {_n(c.U, 2)} | {otros} |")
     a("")
+    if p.puentes_termicos:
+        a("### 2.5 Puentes térmicos")
+        a("")
+        a("| Puente térmico | Tipo (ISO 14683) | L m | ψ W/mK | ψ·L W/K |")
+        a("|---|---|---:|---:|---:|")
+        for pt in p.puentes_termicos:
+            a(f"| {pt.nombre} | {pt.tipo} | {_n(pt.longitud, 2)} | {_n(pt.psi, 3)} | {_n(pt.H, 2)} |")
+        a("")
 
     a("## 3. Carga de refrigeración")
     a("")

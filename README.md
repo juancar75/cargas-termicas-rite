@@ -4,7 +4,7 @@
 Software libre pensado para instaladores e ingenieros que tienen que redactar la
 memoria técnica de una instalación de climatización.
 
-> Estado: **v0.2 — en desarrollo**. Funciona para un local, con entrada en YAML y salida
+> Estado: **v0.3 — en desarrollo**. Funciona para un local, con entrada en YAML y salida
 > en Markdown/CSV, y está **validado contra EnergyPlus** en 9 casos de referencia.
 > Buscamos colaboradores: ver [Cómo colaborar](#cómo-colaborar).
 
@@ -32,8 +32,8 @@ cargas-rite ejemplos/local_comercial.yaml --csv horario.csv
 ```
 
 ```
-Refrigeración: 6.73 kW (sensible 5.36, latente 1.37) a las 17:00 h
-Calefacción:   8.69 kW
+Refrigeración: 7.39 kW (sensible 6.02, latente 1.37) a las 17:00 h
+Calefacción:   7.42 kW
 Informe: ejemplos/local_comercial.md
 ```
 
@@ -48,10 +48,22 @@ local:
 ventilacion:
   categoria_ida: IDA3
 cerramientos:
-  - {nombre: Escaparate SO, tipo: ventana, orientacion: SO, area: 10, U: 3.0, g: 0.6}
+  - nombre: Fachada
+    tipo: muro
+    orientacion: SO
+    area: 14
+    capas:                                   # materiales del catálogo del CTE
+      - {material: "Enlucido de yeso 1000 < d < 1300", espesor: 0.015}
+      - {material: "MW Lana mineral [0.04 W/[mK]]", espesor: 0.05}
+      - {material: "1/2 pie LP métrico o catalán 40 mm< G < 60 mm", espesor: 0.115}
+  - {nombre: Escaparate, tipo: ventana, orientacion: SO, area: 10,
+     vidrio: "VER_DB1_4-6-4", marco: "VER_PVC dos cámaras", fraccion_marco: 0.15}
   - {nombre: Medianera, tipo: particion, area: 45, U: 1.2,
      temperatura_adyacente: {invierno: 18, verano: 27}}
 ```
+
+Para encontrar nombres del catálogo: `cargas-rite-buscar lana mineral`,
+`cargas-rite-buscar --vidrios dobles bajo emisivos vertical`.
 
 ## Método de cálculo
 
@@ -61,6 +73,9 @@ Resumen (detalle en [`docs/metodologia.md`](docs/metodologia.md) y normas aplica
 | Parte | Método | Base |
 |---|---|---|
 | Cerramientos | U por capas y propiedades dinámicas (amortiguamiento, desfase) | UNE-EN ISO 6946, UNE-EN ISO 13786 |
+| Materiales y soluciones | 761 materiales, 425 soluciones, 258 vidrios y 17 marcos del catálogo del CTE | BD del CTE (HULC) |
+| Terreno y no acondicionados | Soleras, factor b de espacios no acondicionados | DA DB-HE/1 (ISO 13370, 13789) |
+| Puentes térmicos | ψ·L por tipo de encuentro | UNE-EN ISO 14683 / DA DB-HE/3 |
 | Calefacción | Estacionario, sin descontar ganancias | UNE-EN 12831-1 (simplificado) |
 | Refrigeración | Balance térmico horario con red de nodos por capas y masa interior | Planteamiento UNE-EN ISO 52016-1 |
 | Radiación solar | Posición SPA, cielo despejado ASHRAE/Ineichen, transposición de Perez, IAM de vidrios | pvlib |
@@ -69,7 +84,7 @@ Resumen (detalle en [`docs/metodologia.md`](docs/metodologia.md) y normas aplica
 
 ## Validación
 
-Cada cambio se comprueba con **78 pruebas automáticas**: tablas de ASHRAE (psicrometría),
+Cada cambio se comprueba con **100 pruebas automáticas**: tablas de ASHRAE (psicrometría),
 geometría solar, una simulación numérica independiente (ISO 13786), conservación de la
 energía del modelo dinámico y comparación con **EnergyPlus 26.1** (programa del
 Departamento de Energía de EE. UU. validado con ANSI/ASHRAE 140):
@@ -92,10 +107,11 @@ Ver [`ROADMAP.md`](ROADMAP.md). En resumen:
 
 1. **v0.1** — un local, YAML → informe (✅ hecho)
 2. **v0.2** — cerramientos por capas, método dinámico, librerías validadas, validación con EnergyPlus (✅ hecho)
-3. **v0.3** — datos españoles (Guía IDAE, Catálogo CTE), métodos completos UNE-EN 12831-1 y 52016-1, salida Excel/Word
-4. **v0.4** — varios locales y zonas, simultaneidad
-5. **v0.5** — interfaz: paleta en GstarCAD/AutoCAD, plugin IngeTrazo
-6. **v1.0** — exportación a EnergyPlus/DesignBuilder (gbXML) para casos complejos
+3. **v0.3** — catálogo CTE, terreno y espacios no acondicionados (DA DB-HE/1), puentes térmicos (✅ hecho)
+4. **v0.4** — Guía IDAE de condiciones climáticas, valores ψ del DA DB-HE/3, métodos completos UNE-EN 12831-1 y 52016-1, salida Excel/Word
+5. **v0.5** — varios locales y zonas, simultaneidad
+6. **v0.6** — interfaz: paleta en GstarCAD/AutoCAD, plugin IngeTrazo
+7. **v1.0** — exportación a EnergyPlus/DesignBuilder (gbXML) para casos complejos
 
 ## Cómo colaborar
 
@@ -112,6 +128,12 @@ Toda ayuda es bienvenida, programes o no:
 Esta herramienta **no sustituye el criterio técnico** de quien firma la documentación.
 Los datos de entrada y los resultados deben verificarse. Se distribuye sin garantía
 (ver licencia).
+
+## Créditos
+
+El catálogo de materiales del CTE y los métodos de terreno del DA DB-HE/1 proceden del
+trabajo libre de Rafael Villar Burke (IETcc-CSIC) en
+[cteenergymodel](https://github.com/pachi/cteenergymodel). Ver [`TERCEROS.md`](TERCEROS.md).
 
 ## Licencia
 

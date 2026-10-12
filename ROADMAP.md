@@ -20,9 +20,12 @@ El núcleo de cálculo es una librería Python independiente; las interfaces
 ## v0.3 — Normativa española completa
 - [ ] Ajustar a los textos de UNE-EN 12831-1, UNE-EN ISO 52016-1, 6946, 13786, 13370 y 13789
       (ver [`docs/normativa.md`](docs/normativa.md)).
-- [ ] Puentes térmicos por ψ·L con los valores del DA DB-HE/3.
+- [x] Puentes térmicos por ψ·L con los tipos de UNE-EN ISO 14683.
+- [ ] Valores ψ por defecto del DA DB-HE/3.
+- [x] Soleras (ISO 13370) y espacios no acondicionados (factor b) según el DA DB-HE/1.
+- [ ] Muros enterrados (ISO 13370, 9.3.3).
 - [ ] Base de datos climática con los valores de la Guía IDAE (localidad → condiciones).
-- [ ] Biblioteca de cerramientos y huecos tipo (Catálogo de Elementos Constructivos del CTE).
+- [x] Biblioteca de materiales, soluciones, vidrios y marcos del catálogo del CTE.
 - [ ] Lectura del XML de registro de CE3X/HULC para importar cerramientos reales.
 - [ ] Salida a Excel y Word para la memoria técnica.
 - [ ] Sombras de voladizos y retranqueos.

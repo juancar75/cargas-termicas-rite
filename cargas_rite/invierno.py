@@ -56,6 +56,8 @@ def calcular_invierno(p: Proyecto) -> ResultadoInvierno:
         else:
             phi = c.U * c.area * (ti - c.temperatura_adyacente_invierno)
         r.transmision[c.nombre] = max(phi, 0.0)
+    for pt in p.puentes_termicos:
+        r.transmision[f"PT {pt.tipo}: {pt.nombre}"] = pt.H * (ti - te)
     v = p.ventilacion
     r.ventilacion = RHO_CP_AIRE * v.caudal_m3h * (1 - v.eficiencia_recuperador) * (ti - te)
     r.infiltracion = RHO_CP_AIRE * v.infiltracion_h * p.local.volumen * (ti - te)

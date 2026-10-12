@@ -1,8 +1,10 @@
 # Ejemplo: local comercial en planta baja entre medianeras, con viviendas encima.
 # Unidades: m, m², W, °C. Áreas de muro NETAS (sin huecos).
-# Capas siempre de INTERIOR a EXTERIOR: espesor [m], conductividad λ [W/mK],
-# densidad ρ [kg/m³], calor_especifico c [J/kgK]. Con capas se calculan U (ISO 6946)
-# y amortiguamiento/desfase (ISO 13786). También se puede dar sólo 'U'.
+# Capas siempre de INTERIOR a EXTERIOR. Cada capa puede ser:
+#   - un material del catálogo CTE: {material: "<nombre oficial>", espesor: m}
+#   - o propia: {nombre, espesor, conductividad, densidad, calor_especifico} / {resistencia}
+# También se puede usar una solución completa del catálogo: solucion: "<nombre>"
+# o dar sólo 'U'. Para buscar nombres:  python -m cargas_rite.buscar lana mineral
 
 proyecto:
   titulo: "Local comercial — ejemplo"
@@ -18,6 +20,7 @@ clima:
   huso: 1                      # hora estándar - UTC (península 1, Canarias 0)
   mes_verano: 7
   modelo_cielo: ashrae         # ashrae | ineichen
+  temperatura_media_anual: 15.0  # ILUSTRATIVO: temperatura del terreno (soleras)
   invierno:
     temperatura_seca: -3.0     # ILUSTRATIVO: sustituir por el percentil de la Guía IDAE
   verano:
@@ -54,16 +57,16 @@ cerramientos:
     area: 14.0
     absortividad: 0.6
     capas:
-      - {nombre: enlucido de yeso, espesor: 0.015, conductividad: 0.57, densidad: 1150, calor_especifico: 1000}
-      - {nombre: ladrillo hueco,   espesor: 0.07,  conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
-      - {nombre: lana mineral,     espesor: 0.05,  conductividad: 0.037, densidad: 40,  calor_especifico: 1000}
-      - {nombre: ladrillo perforado, espesor: 0.115, conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
+      - {material: "Enlucido de yeso 1000 < d < 1300", espesor: 0.015}
+      - {material: "Tabique de LH sencillo [40 mm < Espesor < 60 mm]", espesor: 0.05}
+      - {material: "MW Lana mineral [0.04 W/[mK]]", espesor: 0.05}
+      - {material: "1/2 pie LP métrico o catalán 40 mm< G < 60 mm", espesor: 0.115}
   - nombre: Escaparate SO
     tipo: ventana
     orientacion: SO
     area: 10.0
-    U: 3.0                     # ventana completa (vidrio + marco)
-    g: 0.60                    # factor solar del vidrio a incidencia normal
+    vidrio: "VER_DB1_4-6-4"      # doble bajo emisivo del catálogo CTE (da U y g)
+    marco: "VER_Normal sin rotura de puente térmico"
     fraccion_marco: 0.15
     factor_sombra: 0.8         # toldo / retranqueo
     hojas: 2                   # nº de vidrios (corrección por ángulo de incidencia)
@@ -89,11 +92,12 @@ cerramientos:
   - nombre: Solera
     tipo: suelo
     area: 85.0
-    temperatura_adyacente: {invierno: 12, verano: 18}
+    terreno:                   # U según UNE-EN ISO 13370 (DA DB-HE/1)
+      perimetro: 8.5           # perímetro EXPUESTO (sólo la fachada; las medianeras no cuentan)
     capas:
-      - {nombre: baldosa,  espesor: 0.02, conductividad: 1.3, densidad: 2300, calor_especifico: 840}
-      - {nombre: mortero,  espesor: 0.04, conductividad: 1.3, densidad: 1900, calor_especifico: 1000}
-      - {nombre: solera,   espesor: 0.15, conductividad: 1.65, densidad: 2150, calor_especifico: 1000}
+      - {material: "Plaqueta o baldosa cerámica", espesor: 0.02}
+      - {material: "Mortero de cemento o cal para albañilería y para revoco/enlucido 1800 < d < 2000", espesor: 0.04}
+      - {material: "Hormigón armado 2300 < d < 2500", espesor: 0.15}
 
 # Superficies interiores sin pérdidas que almacenan calor (sólo método dinámico).
 masas_interiores:
@@ -103,6 +107,12 @@ masas_interiores:
     capas:
       - {nombre: ladrillo hueco, espesor: 0.07, conductividad: 0.49, densidad: 1200, calor_especifico: 1000}
 
+# Puentes térmicos (tipos de UNE-EN ISO 14683 / DA DB-HE/3). Valores ψ ILUSTRATIVOS:
+# sustituir por los del DA DB-HE/3 o por cálculo. Si se indican, no se aplica el ΔU global.
+puentes_termicos:
+  - {tipo: IF, nombre: "Frente de forjado", longitud: 8.5, psi: 0.70}
+  - {tipo: W,  nombre: "Contorno del escaparate", longitud: 13.0, psi: 0.15}
+  - {tipo: GF, nombre: "Encuentro solera-fachada", longitud: 8.5, psi: 0.50}
+
 coeficientes:
-  puentes_termicos_dU: 0.10
   mayoracion: 0.10

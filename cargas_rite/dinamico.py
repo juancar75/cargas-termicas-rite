@@ -257,6 +257,12 @@ class ModeloLocal:
             exc.append((f"{w.nombre} (conducción)", fc))
             exc.append((f"{w.nombre} (solar)", fs))
 
+        # Puentes térmicos: conducción sin masa, directa al aire
+        for pt in p.puentes_termicos:
+            def fpt(h, H=pt.H):
+                return np.zeros(n), H * (te(h) - ti)
+            exc.append((f"PT {pt.tipo}: {pt.nombre}", fpt))
+
         # Ganancias internas
         h_ini, h_fin = lo.horario
 

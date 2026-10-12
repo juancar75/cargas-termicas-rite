@@ -145,6 +145,8 @@ def calcular_verano(p: Proyecto) -> ResultadoVerano:
                 desfasada = t_sol_aire(c, hs - c.desfase_h)
                 q = c.U * c.area * ((m - ti) + c.factor_amortiguamiento * (desfasada - m))
                 hv.componentes[c.nombre] = q
+        for pt in p.puentes_termicos:
+            hv.componentes[f"PT {pt.tipo}: {pt.nombre}"] = pt.H * (te - ti)
         if ocupado:
             hv.componentes["Ocupantes"] = lo.personas * lo.sensible_persona
             hv.latente["Ocupantes"] = lo.personas * lo.latente_persona
